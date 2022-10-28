@@ -10,24 +10,23 @@ import {
   loadAggregatorDefinition,
   saveAggregatorSchema,
 } from "./schema";
+import path from 'path';
 
-export async function createPublicAggregator(argv: any): Promise<void> {
-  const { definitionFile, queueKey, authorityKeypair, outFile, force } = argv;
-  // TODO: fetch real ones
-  const authorityKeys = Keypair.generate();
+export async function createPublicAggregator(authorityKeypair: Keypair): Promise<void> {
+  const queueKey = 'B4yBQ3hYcjnrNLxUnauJqwpFJnjtm7s8gHybgkAdgXhQ';
   const program = await loadSwitchboardProgram(
-    "mainnet-beta",
-    new Connection('https://api.mainnet-beta.solana.com'),
-    authorityKeys,
+    'devnet',
+    new Connection('https://api.devnet.solana.com'),
+    authorityKeypair,
     {
-      commitment: "finalized",
+      commitment: 'finalized',
     }
   );
-
-  const parsedAggregatorDefinition = loadAggregatorDefinition(definitionFile);
+  const definitionPath = path.join('..', 'aggregator-definition.json');
+  const parsedAggregatorDefinition = loadAggregatorDefinition(definitionPath);
   if (!parsedAggregatorDefinition) {
     throw new Error(
-      `failed to load aggregator definition from ${definitionFile}`
+      `failed to load aggregator definition from ${definitionPath}`
     );
   }
   if (parsedAggregatorDefinition.jobs.length === 0) {
@@ -40,12 +39,13 @@ export async function createPublicAggregator(argv: any): Promise<void> {
     publicKey: queuePubkey,
   });
 
-  console.log(chalk.yellow("######## Switchboard Setup ########"));
+  console.log(chalk.yellow('######## Switchboard Setup ########'));
   const aggregatorSchema = await createAggregatorFromDefinition(
     program as any as Program<Idl>,
     parsedAggregatorDefinition,
     queueAccount
   );
+  const outFile = path.join('..', 'outFile.json');
   console.log(`Aggregator created succesfully `);
-  saveAggregatorSchema(aggregatorSchema, outFile, force);
+  saveAggregatorSchema(aggregatorSchema, outFile, false);
 }
