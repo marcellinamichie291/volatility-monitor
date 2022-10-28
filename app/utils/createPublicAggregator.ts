@@ -6,17 +6,18 @@ import {
 } from "@switchboard-xyz/switchboard-v2";
 import chalk from "chalk";
 import {
-  createAggregatorFromDefinition,
   loadAggregatorDefinition,
   saveAggregatorSchema,
 } from "./schema";
 import path from 'path';
+import { createAggregatorFromDefinition, CreateAggregatorFromDefinitionArgs } from './createAggregatorFromDefinition';
 
 export async function createPublicAggregator(authorityKeypair: Keypair): Promise<void> {
   const queueKey = 'B4yBQ3hYcjnrNLxUnauJqwpFJnjtm7s8gHybgkAdgXhQ';
+  const connection = new Connection('https://api.devnet.solana.com');
   const program = await loadSwitchboardProgram(
     'devnet',
-    new Connection('https://api.devnet.solana.com'),
+    connection,
     authorityKeypair,
     {
       commitment: 'finalized',
@@ -40,11 +41,14 @@ export async function createPublicAggregator(authorityKeypair: Keypair): Promise
   });
 
   console.log(chalk.yellow('######## Switchboard Setup ########'));
-  const aggregatorSchema = await createAggregatorFromDefinition(
-    program as any as Program<Idl>,
-    parsedAggregatorDefinition,
-    queueAccount
-  );
+  const args: CreateAggregatorFromDefinitionArgs = {
+    program: program as any as Program<Idl>,
+    definition: parsedAggregatorDefinition,
+    queueAccount,
+    walletKeys: authorityKeypair,
+    connection,
+  };
+  const aggregatorSchema = await createAggregatorFromDefinition(args);
   const outFile = path.join('..', 'outFile.json');
   console.log(`Aggregator created succesfully `);
   saveAggregatorSchema(aggregatorSchema, outFile, false);

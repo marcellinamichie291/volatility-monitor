@@ -1,4 +1,6 @@
 node_modules
 target
 build
+.idea
 Cargo.lock
+yarn.lock
