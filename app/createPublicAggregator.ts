@@ -16,7 +16,7 @@ export async function createPublicAggregator(argv: any): Promise<void> {
   // TODO: fetch real ones
   const authorityKeys = Keypair.generate();
   const program = await loadSwitchboardProgram(
-    "devnet",
+    "mainnet-beta",
     new Connection('https://api.mainnet-beta.solana.com'),
     authorityKeys,
     {
