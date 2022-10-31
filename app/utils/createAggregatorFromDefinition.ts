@@ -1,21 +1,23 @@
-import * as anchor from "@project-serum/anchor";
-import {
-  createAssociatedTokenAccount,
-  createAssociatedTokenAccountInstruction,
-} from '@solana/spl-token';
+import { BN, Program, web3 } from '@project-serum/anchor';
 import {
   Connection,
   Keypair,
   PublicKey,
-  Transaction,
-  sendAndConfirmTransaction,
 } from '@solana/web3.js';
 import { OracleJob } from '@switchboard-xyz/switchboard-api';
-import { AggregatorAccount, JobAccount, LeaseAccount, OracleQueueAccount, PermissionAccount, ProgramStateAccount, programWallet, SwitchboardProgram } from '@switchboard-xyz/switchboard-v2';
+import {
+  AggregatorAccount,
+  JobAccount,
+  LeaseAccount,
+  OracleQueueAccount,
+  PermissionAccount,
+  ProgramStateAccount,
+  programWallet,
+} from '@switchboard-xyz/switchboard-v2';
 import { AggregatorSchema, JobSchema, toPermissionString, toUtf8 } from './schema';
 
 export type CreateAggregatorFromDefinitionArgs = {
-  program: anchor.Program;
+  program: Program;
   definition: AggregatorSchema;
   queueAccount: OracleQueueAccount;
   walletKeys: Keypair;
@@ -23,7 +25,9 @@ export type CreateAggregatorFromDefinitionArgs = {
 }
 
 export async function createAggregatorFromDefinition(
-  { program, definition, queueAccount, walletKeys, connection }: CreateAggregatorFromDefinitionArgs
+  program: Program,
+  definition: AggregatorSchema,
+  queueAccount: OracleQueueAccount
 ): Promise<AggregatorSchema> {
   // Aggregator
   const feedName = definition.name;
@@ -34,59 +38,45 @@ export async function createAggregatorFromDefinition(
     minRequiredJobResults,
     minUpdateDelaySeconds,
   } = definition;
-  const switchBoardProgram = program as any as SwitchboardProgram;
-  const aggregatorAccount = await AggregatorAccount.create(switchBoardProgram, {
+  const aggregatorAccount = await AggregatorAccount.create(program, {
     name: Buffer.from(feedName),
     batchSize: batchSize || 1,
     minRequiredOracleResults: minRequiredOracleResults || 1,
     minRequiredJobResults: minRequiredJobResults || 1,
     minUpdateDelaySeconds: minUpdateDelaySeconds || 10,
     queueAccount: queueAccount,
-    authority: programWallet(switchBoardProgram).publicKey,
+    authority: programWallet(program).publicKey,
   });
   console.log(
     `Aggregator (${feedName})`, aggregatorAccount.publicKey
   );
   if (!aggregatorAccount.publicKey)
     throw new Error(`failed to read Aggregator publicKey`);
-  const aggregatorPermission = await PermissionAccount.create(switchBoardProgram, {
-    authority: programWallet(switchBoardProgram).publicKey,
+
+  // Aggregator Permissions
+  const aggregatorPermission = await PermissionAccount.create(program, {
+    authority: programWallet(program).publicKey,
     granter: new PublicKey(queueAccount.publicKey),
     grantee: aggregatorAccount.publicKey,
   });
   console.log(`  Permission`, aggregatorPermission.publicKey);
-  const [programStateAccount] = ProgramStateAccount.fromSeed(switchBoardProgram);
+
+  // Lease
+  const [programStateAccount] = ProgramStateAccount.fromSeed(program);
   const switchTokenMint = await programStateAccount.getTokenMint();
-  const switchBoardWalletPk = programWallet(switchBoardProgram).publicKey;
-  console.log(1);
-  let ata = await createAssociatedTokenAccount(
-    connection, // connection
-    walletKeys, // fee payer
-    switchTokenMint.address, // mint
-    switchBoardWalletPk // owner,
+  const tokenAccount = await switchTokenMint.getOrCreateAssociatedAccountInfo(
+    programWallet(program).publicKey
   );
-  console.log(2);
-  let tx = new Transaction().add(
-    createAssociatedTokenAccountInstruction(
-      walletKeys.publicKey, // payer
-      ata, // ata
-      switchBoardWalletPk, // owner
-      switchTokenMint.address // mint
-    )
-  );
-  await sendAndConfirmTransaction(connection, tx, [walletKeys]);
-  console.log(3);
-  // const tokenAccount = await (switchTokenMint as any).getOrCreateAssociatedAccountInfo(
-  //   programWallet(switchBoardProgram).publicKey
-  // );
-  const leaseContract = await LeaseAccount.create(switchBoardProgram, {
-    loadAmount: new anchor.BN(0),
-    funder: ata,
-    funderAuthority: programWallet(switchBoardProgram),
+  const leaseContract = await LeaseAccount.create(program, {
+    loadAmount: new BN(0),
+    funder: tokenAccount.address,
+    funderAuthority: programWallet(program),
     oracleQueueAccount: queueAccount,
     aggregatorAccount,
   });
   console.log(`  Lease`, leaseContract.publicKey);
+
+  // Jobs
   const jobSchemas: JobSchema[] = [];
   for await (const job of jobs) {
     const { name, tasks } = job;
@@ -97,14 +87,14 @@ export async function createAggregatorFromDefinition(
         })
       ).finish()
     );
-    const jobKeypair = anchor.web3.Keypair.generate();
-    const jobAccount = await JobAccount.create(switchBoardProgram, {
+    const jobKeypair = web3.Keypair.generate();
+    const jobAccount = await JobAccount.create(program, {
       data: jobData,
       keypair: jobKeypair,
-      authority: programWallet(switchBoardProgram).publicKey,
+      authority: programWallet(program).publicKey,
     });
     console.log(`  Job (${name})`, jobAccount.publicKey);
-    await aggregatorAccount.addJob(jobAccount, programWallet(switchBoardProgram)); // Add Job to Aggregator
+    await aggregatorAccount.addJob(jobAccount, programWallet(program)); // Add Job to Aggregator
     const jobSchema: JobSchema = {
       name,
       publicKey: jobAccount.publicKey,
@@ -113,8 +103,10 @@ export async function createAggregatorFromDefinition(
     };
     jobSchemas.push(jobSchema);
   }
+
   const aggregatorData = await aggregatorAccount.loadData();
   const permissionData = await aggregatorPermission.loadData();
+
   const newAggregatorDefinition: AggregatorSchema = {
     ...definition,
     name: toUtf8(aggregatorData.name),
@@ -137,4 +129,3 @@ export async function createAggregatorFromDefinition(
   };
   return newAggregatorDefinition;
 }
-

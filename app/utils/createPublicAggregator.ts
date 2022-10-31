@@ -41,14 +41,7 @@ export async function createPublicAggregator(authorityKeypair: Keypair): Promise
   });
 
   console.log(chalk.yellow('######## Switchboard Setup ########'));
-  const args: CreateAggregatorFromDefinitionArgs = {
-    program: program as any as Program<Idl>,
-    definition: parsedAggregatorDefinition,
-    queueAccount,
-    walletKeys: authorityKeypair,
-    connection,
-  };
-  const aggregatorSchema = await createAggregatorFromDefinition(args);
+  const aggregatorSchema = await createAggregatorFromDefinition(program, parsedAggregatorDefinition, queueAccount);
   const outFile = path.join('..', 'outFile.json');
   console.log(`Aggregator created succesfully `);
   saveAggregatorSchema(aggregatorSchema, outFile, false);
